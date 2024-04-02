@@ -1,4 +1,4 @@
-from lvmc.core.particle_lattice import Orientation, ParticleLattice
+from lvmc.core.lattice import Orientation, ParticleLattice
 from lvmc.core.flow import Flow, PoiseuilleFlow
 
 

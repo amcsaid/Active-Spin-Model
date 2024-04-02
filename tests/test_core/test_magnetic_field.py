@@ -1,5 +1,5 @@
 import pytest
-from lvmc.core.particle_lattice import ParticleLattice, Orientation
+from lvmc.core.lattice import ParticleLattice, Orientation
 from lvmc.core.magnetic_field import MagneticField
 
 

@@ -5,7 +5,7 @@ This module is the rates manager module. It computes the energy per site, the Ha
 
 from typing import Tuple
 import torch
-from lvmc.core.particle_lattice import ParticleLattice
+from lvmc.core.lattice import ParticleLattice
 import torch.nn.functional as F
 from icecream import ic
 
@@ -15,7 +15,7 @@ class RatesManager:
         self.lattice = lattice
         self.params = params
 
-    def count_neighbours_with_orientation(self) -> torch.Tensor:
+    def compute_unidim_interaction_energies(self) -> torch.Tensor:
         """
         Count the number of neighbours with a specific orientation.
         :return: Tensor of shape (num_orientations, lattice.height, lattice.width)
@@ -29,15 +29,15 @@ class RatesManager:
         )
 
         # Replicate the kernel for each orientation
-        kernel = kernel.repeat(self.lattice.NUM_ORIENTATIONS, 1, 1, 1)
-
+        kernel = kernel.repeat(2, 1, 1, 1)
         # Pad the particles tensor to handle boundary conditions
         padded_particles = F.pad(
-            self.lattice.particles, pad=(1, 1, 1, 1), mode="circular"
+            self.lattice.particles.permute(2, 0, 1), pad=(1, 1, 1, 1), mode="circular"
         ).float()
+
         # Perform convolution to count the number of nearest neighbors with each orientation
         self.nearest_neighbours = F.conv2d(
-            padded_particles, kernel, padding=0, groups=self.lattice.NUM_ORIENTATIONS
+            padded_particles, kernel, padding=0, groups=2
         )
         ic(self.nearest_neighbours)
 
@@ -47,4 +47,4 @@ if __name__ == "__main__":
     lattice.populate(0.3)
     ic(lattice)
     rm = RatesManager(lattice)
-    rm.count_neighbours_with_orientation()
+    rm.compute_unidim_interaction_energies()

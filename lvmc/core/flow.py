@@ -1,5 +1,5 @@
 import torch
-from lvmc.core.particle_lattice import Orientation, ParticleLattice
+from lvmc.core.lattice import Orientation, ParticleLattice
 
 
 class Flow:

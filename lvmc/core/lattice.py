@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-import warnings
 from enum import Enum
 from typing import List, Tuple, Optional, Union
 import copy
@@ -29,7 +28,9 @@ class ParticleLattice:
 
     NUM_ORIENTATIONS = len(Orientation)  # Class level constant
 
-    def __init__(self, width: int, height: int, generator: torch.Generator = None):
+    def __init__(
+        self, width: int, height: int, generator: torch.Generator = None, dim=2
+    ):
         """
         Initialize the particle lattice.
         :param width: Width of the lattice.
@@ -43,13 +44,13 @@ class ParticleLattice:
         # Initialize the paricles lattice as a 3D tensor with dimensions corresponding to
         # orientations, width, and height.
         self.particles = torch.zeros(
-            (self.NUM_ORIENTATIONS, height, width), dtype=torch.bool, device=device
+            (height, width, dim), dtype=torch.int8, device=device
         )
         self.obstacles = torch.zeros((height, width), dtype=torch.bool, device=device)
         self.sinks = torch.zeros((height, width), dtype=torch.bool, device=device)
 
         # Initialize an array to store orientations of particles
-        self.orientation_map = np.full(
+        self.orientation_map = np.full(  # Using numpy instead of torch because torch doesn't support None and Orientation objects
             (height, width), None
         )  # None indicates no particle
         self.occupancy_map = torch.zeros(
@@ -242,7 +243,7 @@ class ParticleLattice:
 
     @property
     def n_particles(self):
-        return self.particles.sum().item()
+        return self.particles.abs().sum().item()
 
     @property
     def is_empty(self):
@@ -273,7 +274,9 @@ class ParticleLattice:
         # Validate that the specified cell is available for particle movement
         self._validate_availability(x, y)
 
-        self.particles[orientation.value, y, x] = True  # Add particle to the lattice
+        self.particles[y, x] = torch.tensor(
+            self.orientation_deltas[orientation]
+        )  # Add particle to the lattice
         self.orientation_map[y, x] = orientation
         self.occupancy_map[y, x] = True
 
@@ -292,7 +295,7 @@ class ParticleLattice:
         """
         # Validate coordinates
         self._validate_coordinates(x, y)
-        self.particles[self.orientation_map[y, x].value, y, x] = False
+        self.particles[y, x] = 0  # Remove particle from the lattice
         self.orientation_map[y, x] = None
         self.occupancy_map[y, x] = False
 
@@ -400,8 +403,8 @@ class ParticleLattice:
             return []
 
         # Directly update the particle's position in the lattice
-        self.particles[orientation.value, y, x] = False
-        self.particles[orientation.value, new_y, new_x] = True
+        self.particles[new_y, new_x] = self.particles[y, x]
+        self.particles[y, x] = 0
 
         # Update the orientation map
         self.orientation_map[y, x] = None
@@ -438,8 +441,8 @@ class ParticleLattice:
             self.remove_particle(x, y)
             return []
 
-        self.remove_particle(x, y)
-        self.add_particle(new_x, new_y, orientation)
+        self.particles[new_y, new_x] = self.particles[y, x]
+        self.particles[y, x] = 0
         return [(new_x, new_y)]
 
     def reorient_particle(self, x: int, y: int, new_orientation: Orientation) -> bool:
@@ -457,11 +460,8 @@ class ParticleLattice:
                 f"{new_orientation=} must be an instance of Orientation enum."
             )
 
-        current_orientation = self.get_particle_orientation(x, y)
-
         # Update the orientation in the particles tensor and orientation_map
-        self.particles[current_orientation.value, y, x] = False
-        self.particles[new_orientation.value, y, x] = True
+        self.particles[y, x] = torch.tensor(self.orientation_deltas[new_orientation])
         self.orientation_map[y, x] = new_orientation
 
     ##################################
@@ -669,3 +669,11 @@ class ParticleLattice:
             lattice_str += row_str.strip() + "\n"
 
         return lattice_str.strip()
+
+
+if __name__ == "__main__":
+    from rich import print
+
+    lattice = ParticleLattice(5, 5)
+    lattice.populate(0.3)
+    print(lattice.visualize_lattice())

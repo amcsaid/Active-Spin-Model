@@ -1,4 +1,4 @@
-from lvmc.core.particle_lattice import ParticleLattice, Orientation  # for type hinting
+from lvmc.core.lattice import ParticleLattice, Orientation  # for type hinting
 import numpy as np
 
 

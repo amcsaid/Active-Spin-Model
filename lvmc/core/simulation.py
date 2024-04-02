@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import Optional, Tuple
-from lvmc.core.particle_lattice import ParticleLattice, Orientation
+from lvmc.core.lattice import ParticleLattice, Orientation
 from lvmc.core.magnetic_field import MagneticField
 from lvmc.core.flow import PoiseuilleFlow
 from enum import Enum, auto

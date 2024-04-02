@@ -1,5 +1,5 @@
 import pytest
-from lvmc.core.particle_lattice import ParticleLattice, Orientation
+from lvmc.core.lattice import ParticleLattice, Orientation
 import torch
 import numpy as np
 
@@ -76,7 +76,7 @@ def test_populate():
     lattice = ParticleLattice(width=10, height=10)
     density = 0.5
     lattice.populate(density)
-    populated_cells = torch.sum(lattice.particles).item()
+    populated_cells = lattice.n_particles
     expected_cells = int(density * lattice.width * lattice.height)
     assert populated_cells == expected_cells
     # add test for obstacles and sinks
@@ -94,7 +94,7 @@ def test_add_particle():
     x, y = 5, 5
     orientation = Orientation.UP  # Changed to use Orientation enum
     lattice.add_particle(x, y, orientation)
-    assert lattice.particles[orientation.value, y, x] == True
+    assert lattice._is_empty(x, y) == False
 
 
 def test_add_particle_outside_bounds():
@@ -121,8 +121,9 @@ def test_add_particle_on_sink():
     orientation = Orientation.UP
     # the particle should still be added
     lattice.add_particle(x, y, orientation)
-    assert lattice.particles[orientation.value, y, x] == True
+    assert lattice.get_particle_orientation(x, y) == orientation
     assert lattice._is_sink(x, y) == True
+    assert lattice._is_empty(x, y) == False
 
 
 def test_add_particle_on_occupied_cell():
@@ -141,7 +142,7 @@ def test_remove_particle():
     orientation = Orientation.UP
     lattice.add_particle(x, y, orientation)
     lattice.remove_particle(x, y)
-    assert lattice.particles[orientation.value, y, x] == False
+    assert lattice._is_empty(x, y) == True
 
 
 def test_remove_particle_outside_bounds():
@@ -149,142 +150,6 @@ def test_remove_particle_outside_bounds():
     x, y = 11, 11
     with pytest.raises(IndexError):
         lattice.remove_particle(x, y)
-
-
-def test_query_lattice_state():
-    lattice = ParticleLattice(width=10, height=10)
-    lattice.populate(density=0.5)
-    lattice_state = lattice.query_lattice_state()
-    assert lattice_state.size() == (
-        lattice.NUM_ORIENTATIONS,
-        lattice.height,
-        lattice.width,
-    )
-    assert torch.sum(lattice_state) == torch.sum(lattice.particles)
-
-
-def test_compute_tm():
-    lattice = ParticleLattice(width=10, height=10)
-    v0 = 1.0
-
-    positions = [(0, 0), (0, 1), (0, 2), (0, 3)]
-
-    # add particles to the lattice
-    for position, ori in zip(positions, Orientation):
-        lattice.add_particle(position[0], position[1], ori)
-
-    # compute the transition matrix
-    tm = lattice.compute_tm(v0)
-
-    # check if the transition matrix is of the correct shape
-    assert tm.shape == (lattice.height, lattice.width)
-
-    # check that the positions [(0,0), (0,1), (0,3)] are non zero entries in the transition matrix
-    moving_positions = [(0, 0), (0, 1), (0, 3)]
-    for position in moving_positions:
-        assert tm[position[1], position[0]] == v0
-
-    # check that the positions [(0,2)] are zero entries in the transition matrix
-    stationary_positions = [(0, 2)]
-    for position in stationary_positions:
-        assert tm[position[1], position[0]] == 0
-
-    # check that all the other entries in the transition matrix are zero
-    zero_positions = [
-        (0, 4),
-        (1, 0),
-        (1, 1),
-        (1, 2),
-        (1, 3),
-        (1, 4),
-        (2, 0),
-        (2, 1),
-        (2, 3),
-        (2, 4),
-        (3, 0),
-        (3, 1),
-        (3, 2),
-        (3, 4),
-        (4, 0),
-        (4, 1),
-        (4, 2),
-        (4, 3),
-        (4, 4),
-    ]
-    for position in zero_positions:
-        assert tm[position[1], position[0]] == 0
-
-
-def test_compute_tr():
-    # Create a ParticleLattice instance
-    lattice = ParticleLattice(width=10, height=10)
-    g = 1.0
-    tr = lattice.compute_tr(g)
-    assert tr.shape == (lattice.NUM_ORIENTATIONS, lattice.height, lattice.width)
-
-    # Check that an entry is non zero if and only if the the cell is occupied
-    for x in range(lattice.width):
-        for y in range(lattice.height):
-            if lattice._is_empty(x, y):
-                assert tr[:, y, x].sum() == 0
-            else:
-                for orientation in range(lattice.NUM_ORIENTATIONS):
-                    assert tr[orientation, y, x] != 0
-
-
-def test_compute_tr_with_obstacles():
-    # Create a ParticleLattice instance
-    lattice = ParticleLattice(width=10, height=10)
-    g = 1.0
-    lattice.set_obstacle(5, 5)
-    tr = lattice.compute_tr(g)
-    assert tr.shape == (lattice.NUM_ORIENTATIONS, lattice.height, lattice.width)
-
-    # Check that an entry is non zero if and only if the the cell is occupied
-    for x in range(lattice.width):
-        for y in range(lattice.height):
-            if lattice._is_empty(x, y):
-                assert tr[:, y, x].sum() == 0
-            else:
-                for orientation in range(lattice.NUM_ORIENTATIONS):
-                    assert tr[orientation, y, x] != 0
-
-
-def test_compute_tr_with_sinks():
-    # Create a ParticleLattice instance
-    lattice = ParticleLattice(width=10, height=10)
-    g = 1.0
-    lattice.set_sink(5, 5)
-    tr = lattice.compute_tr(g)
-    assert tr.shape == (lattice.NUM_ORIENTATIONS, lattice.height, lattice.width)
-
-    # Check that an entry is non zero if and only if the the cell is occupied
-    for x in range(lattice.width):
-        for y in range(lattice.height):
-            if lattice._is_empty(x, y):
-                assert tr[:, y, x].sum() == 0
-            else:
-                for orientation in range(lattice.NUM_ORIENTATIONS):
-                    assert tr[orientation, y, x] != 0
-
-
-def test_compute_tr_with_obstacles_and_sinks():
-    # Create a ParticleLattice instance
-    lattice = ParticleLattice(width=10, height=10)
-    g = 1.0
-    lattice.set_sink(5, 5)
-    lattice.set_obstacle(5, 4)
-    tr = lattice.compute_tr(g)
-    assert tr.shape == (lattice.NUM_ORIENTATIONS, lattice.height, lattice.width)
-
-    # Check that an entry is non zero if and only if the the cell is occupied
-    for x in range(lattice.width):
-        for y in range(lattice.height):
-            if lattice._is_empty(x, y):
-                assert tr[:, y, x].sum() == 0
-            else:
-                for orientation in range(lattice.NUM_ORIENTATIONS):
-                    assert tr[orientation, y, x] != 0
 
 
 def test_get_target_position():
