@@ -29,7 +29,7 @@ class RatesManager:
 
         self.update_rates()
 
-    def compute_unidim_interaction_energies(self) -> torch.Tensor:
+    def compute_interaction_forces(self) -> torch.Tensor:
         """
         Count the number of neighbours with a specific orientation.
         :return: Tensor of shape (num_orientations, lattice.height, lattice.width)
@@ -50,10 +50,10 @@ class RatesManager:
         ).float()
 
         # Perform convolution to count the number of nearest neighbors with each orientation
-        self.nearest_neighbours = F.conv2d(
+        self.interaction_forces = F.conv2d(
             padded_particles, kernel, padding=0, groups=2
-        )
-        ic(self.nearest_neighbours)
+        ).permute(1, 2, 0)
+
 
 
 if __name__ == "__main__":
