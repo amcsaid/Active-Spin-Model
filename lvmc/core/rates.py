@@ -8,6 +8,11 @@ import torch
 from lvmc.core.lattice import ParticleLattice
 import torch.nn.functional as F
 from icecream import ic
+class EventType(Enum):
+    FLIP = 0
+    HOP = auto()
+    ROTATE = auto()
+    ROTATE_NEG = auto()
 
 
 class RatesManager:
