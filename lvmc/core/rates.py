@@ -100,6 +100,65 @@ class RatesManager:
         H_ortho = -torch.sum(self.interaction_forces * rotated_particles, dim=2)
         return 2 * (H_ortho - self.energies) + self.occupancy_deltas
 
+    def compute_hop_delta(self) -> torch.Tensor:
+
+        F_new = self.interaction_forces[self.forward_y, self.forward_x]
+        H_new = (
+            -torch.sum(F_new * self.lattice.particles, dim=2)
+            + self.occupancy_deltas
+            + self.ve_deltas
+        )
+        return 2 * (H_new - self.energies)
+
+    def compute_volume_exclusion_delta(self) -> torch.Tensor:
+        sigma_new = self.lattice.particles[self.forward_y, self.forward_x].type(torch.float)
+        sigma_new_norm = torch.norm(sigma_new, dim=-1)
+        self.ve_deltas = sigma_new_norm / (sigma_new_norm - 1)
+
+    def compute_occupancy_delta(self) -> torch.Tensor:
+        self.occupancy_deltas = 1 / torch.norm(
+            self.lattice.particles.type(torch.float), dim=-1
+        )
+
+    def compute_rates(self) -> None:
+        """
+        Compute the rates for each event type
+        :return: A dictionary with the rates for each event type
+        """
+        self.rates[EventType.ROTATE] = torch.exp(
+            -self.beta * self.compute_delta(EventType.ROTATE)
+        )
+        self.rates[EventType.HOP] = torch.exp(
+            -self.beta * self.compute_delta(EventType.HOP)
+        )
+        self.rates[EventType.FLIP] = torch.exp(
+            -self.beta * self.compute_delta(EventType.FLIP)
+        )
+        self.rates[EventType.ROTATE_NEG] = torch.exp(
+            -self.beta * self.compute_delta(EventType.ROTATE_NEG)
+        )
+
+    def compute_rates_sums(self) -> None:
+        """
+        Compute the sum of the rates for each event type
+        :return: A dictionary with the sum of the rates for each event type
+        """
+        self.rates_sums[EventType.ROTATE] = self.v0 * torch.sum(
+            self.rates[EventType.ROTATE]
+        )
+        self.rates_sums[EventType.HOP] = torch.sum(self.rates[EventType.HOP])
+
+    def update_rates(self) -> None:
+        """
+        Update the rates for each event type
+        """
+        self.compute_new_positions()
+        self.compute_volume_exclusion_delta()
+        self.compute_occupancy_delta()
+        self.compute_interaction_forces()
+        self.energies = self.compute_energies()
+        self.compute_rates()
+        self.compute_rates_sums()
 
 
 if __name__ == "__main__":
