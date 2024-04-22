@@ -16,9 +16,18 @@ class EventType(Enum):
 
 
 class RatesManager:
-    def __init__(self, lattice: ParticleLattice, params: dict = {}):
+    def __init__(self, lattice: ParticleLattice, **params):
         self.lattice = lattice
         self.params = params
+        self.interaction_forces = torch.zeros(lattice.height, lattice.width, 2)
+        self.rates = {}
+        self.rates_sums = {}
+        self.beta = 1.0
+        self.v0 = 1.0
+        for param, value in params.items():
+            setattr(self, param, value)
+
+        self.update_rates()
 
     def compute_unidim_interaction_energies(self) -> torch.Tensor:
         """
