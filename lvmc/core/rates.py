@@ -5,9 +5,13 @@ This module is the rates manager module. It computes the energy per site, the Ha
 
 from typing import Tuple
 import torch
-from lvmc.core.lattice import ParticleLattice
+from lvmc.core.lattice import ParticleLattice, Orientation
 import torch.nn.functional as F
 from icecream import ic
+import math
+from enum import Enum, auto
+
+
 class EventType(Enum):
     FLIP = 0
     HOP = auto()
@@ -35,24 +39,51 @@ class RatesManager:
         :return: Tensor of shape (num_orientations, lattice.height, lattice.width)
         """
 
-        # Create a kernel to count the number of neighbours
-        kernel = (
-            torch.tensor([[0, 1, 0], [1, 0, 1], [0, 1, 0]], dtype=torch.float32)
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )
+        # # Create a kernel to count the number of neighbours
+        # kernel = (
+        #     torch.tensor([[0, 1, 0], [1, 0, 1], [0, 1, 0]], dtype=torch.float32)
+        #     .unsqueeze(0)
+        #     .unsqueeze(0)
+        # )
 
-        # Replicate the kernel for each orientation
-        kernel = kernel.repeat(2, 1, 1, 1)
-        # Pad the particles tensor to handle boundary conditions
-        padded_particles = F.pad(
-            self.lattice.particles.permute(2, 0, 1), pad=(1, 1, 1, 1), mode="circular"
-        ).float()
+        # # Replicate the kernel for each orientation
+        # kernel = kernel.repeat(2, 1, 1, 1)
+        # # Pad the particles tensor to handle boundary conditions
+        # padded_particles = F.pad(
+        #     self.lattice.particles.permute(2, 0, 1), pad=(1, 1, 1, 1), mode="circular"
+        # ).float()
 
-        # Perform convolution to count the number of nearest neighbors with each orientation
-        self.interaction_forces = F.conv2d(
-            padded_particles, kernel, padding=0, groups=2
-        ).permute(1, 2, 0)
+        # # Perform convolution to count the number of nearest neighbors with each orientation
+        # self.interaction_forces = F.conv2d(
+        #     padded_particles, kernel, padding=0, groups=2
+        # ).permute(1, 2, 0)
+        delta_e = torch.tensor([1, 0], dtype=torch.int8)
+        delta_s = torch.tensor([0, 1], dtype=torch.int8)
+
+        y, x = torch.meshgrid(
+            torch.arange(self.lattice.height),
+            torch.arange(self.lattice.width),
+            indexing="ij",
+        ) 
+
+        x_s = (x + delta_s[0]) % self.lattice.width
+        y_s = (y + delta_s[1]) % self.lattice.height
+
+        x_e = (x + delta_e[0]) % self.lattice.width
+        y_e = (y + delta_e[1]) % self.lattice.height
+
+        x_n = (x - delta_s[0]) % self.lattice.width
+        y_n = (y - delta_s[1]) % self.lattice.height
+
+        x_w = (x - delta_e[0]) % self.lattice.width
+        y_w = (y - delta_e[1]) % self.lattice.height
+
+        sigma_s = self.lattice.particles[y_s, x_s]
+        sigma_e = self.lattice.particles[y_e, x_e]
+        sigma_n = self.lattice.particles[y_n, x_n]
+        sigma_w = self.lattice.particles[y_w, x_w]
+
+        self.interaction_forces = sigma_s + sigma_e + sigma_n + sigma_w
 
     def compute_energies(self) -> torch.Tensor:
         """
@@ -100,6 +131,34 @@ class RatesManager:
         H_ortho = -torch.sum(self.interaction_forces * rotated_particles, dim=2)
         return 2 * (H_ortho - self.energies) + self.occupancy_deltas
 
+    def compute_new_positions(self):
+        y, x = torch.meshgrid(
+            torch.arange(self.lattice.height),
+            torch.arange(self.lattice.width),
+            indexing="ij",
+        )
+        self.forward_x = (x + self.lattice.particles[...,0]) % self.lattice.width
+        self.forward_y = (y + self.lattice.particles[...,1]) % self.lattice.height
+
+        self.backward_x = (x - self.lattice.particles[...,0]) % self.lattice.width
+        self.backward_y = (y - self.lattice.particles[...,1]) % self.lattice.height
+
+        # Rotate 90 degrees. pending to check if it is correct
+        self.right_x = (x + self.lattice.particles[...,1]) % self.lattice.width
+        self.right_y = (y - self.lattice.particles[...,0]) % self.lattice.height
+
+        self.left_x = (x - self.lattice.particles[...,1]) % self.lattice.width
+        self.left_y = (y + self.lattice.particles[...,0]) % self.lattice.height
+    
+    def check_new_positions(self):
+        self.compute_new_positions()
+        sigma_forward = self.lattice.particles[self.forward_y, self.forward_x]
+        sigma_backward = self.lattice.particles[self.backward_y, self.backward_x]
+        sigma_right = self.lattice.particles[self.right_y, self.right_x]
+        sigma_left = self.lattice.particles[self.left_y, self.left_x]
+        F = sigma_forward + sigma_backward + sigma_right + sigma_left
+        return F
+
     def compute_hop_delta(self) -> torch.Tensor:
 
         F_new = self.interaction_forces[self.forward_y, self.forward_x]
@@ -108,7 +167,7 @@ class RatesManager:
             + self.occupancy_deltas
             + self.ve_deltas
         )
-        return 2 * (H_new - self.energies)
+        return 2 * (H_new - self.energies) 
 
     def compute_volume_exclusion_delta(self) -> torch.Tensor:
         sigma_new = self.lattice.particles[self.forward_y, self.forward_x].type(torch.float)
@@ -128,7 +187,7 @@ class RatesManager:
         self.rates[EventType.ROTATE] = torch.exp(
             -self.beta * self.compute_delta(EventType.ROTATE)
         )
-        self.rates[EventType.HOP] = torch.exp(
+        self.rates[EventType.HOP] = self.v0 * torch.exp(-self.ve_deltas) + torch.exp(
             -self.beta * self.compute_delta(EventType.HOP)
         )
         self.rates[EventType.FLIP] = torch.exp(
@@ -143,7 +202,7 @@ class RatesManager:
         Compute the sum of the rates for each event type
         :return: A dictionary with the sum of the rates for each event type
         """
-        self.rates_sums[EventType.ROTATE] = self.v0 * torch.sum(
+        self.rates_sums[EventType.ROTATE] = torch.sum(
             self.rates[EventType.ROTATE]
         )
         self.rates_sums[EventType.HOP] = torch.sum(self.rates[EventType.HOP])
@@ -163,7 +222,32 @@ class RatesManager:
 
 if __name__ == "__main__":
     lattice = ParticleLattice(5, 5)
-    lattice.populate(0.3)
-    ic(lattice)
+    lattice.populate(0.6)
     rm = RatesManager(lattice)
-    rm.compute_unidim_interaction_energies()
+
+
+    H = 4000
+    W = 300
+
+    small_lattice = ParticleLattice(width=W, height=H)
+
+    small_lattice.populate(0.3)
+
+    sigma = small_lattice.particles
+
+
+    import time
+    rm = RatesManager(lattice)
+    # rm.update_rates()
+    # ic(rm.rates)
+    # ic(rm.rates_sums)
+    # ic(rm.total_energy)
+    start = time.time()
+    f = rm.check_new_positions()
+    end = time.time()
+    ic(f"new: {end - start}")
+    start = time.time()
+    rm.compute_interaction_forces()
+    end = time.time()
+    ic(f"with conv: {end - start}")
+    ic(f"are the two tensors equal? {torch.equal(f, rm.interaction_forces)}")

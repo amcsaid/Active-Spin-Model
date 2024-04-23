@@ -4,13 +4,14 @@ import numpy as np
 from enum import Enum
 from typing import List, Tuple, Optional, Union
 import copy
-
+from icecream import ic
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 
 class Orientation(Enum):
+    EMPTY = -1
     UP = 0
     LEFT = 1
     DOWN = 2
@@ -49,26 +50,24 @@ class ParticleLattice:
         self.obstacles = torch.zeros((height, width), dtype=torch.bool, device=device)
         self.sinks = torch.zeros((height, width), dtype=torch.bool, device=device)
 
-        # Initialize an array to store orientations of particles
-        self.orientation_map = np.full(  # Using numpy instead of torch because torch doesn't support None and Orientation objects
-            (height, width), None
-        )  # None indicates no particle
-        self.occupancy_map = torch.zeros(
-            (height, width), dtype=torch.bool, device=device
-        )
-
         # Particle tracking
         self.id_to_position = {}  # Dictionary to track particles
         self.position_to_particle_id = {}  # Dictionary to map positions to particle IDs
         self.next_particle_id = 0  # Counter to assign unique IDs to particles
 
-        # Precompute deltas for each orientation
+        # Precompute deltas for each spin value
         self.orientation_deltas = {
             Orientation.UP: (0, -1),
             Orientation.DOWN: (0, 1),
             Orientation.LEFT: (-1, 0),
             Orientation.RIGHT: (1, 0),
+            Orientation.EMPTY: (0, 0),
         }
+
+        # Initialize the orientation map
+        self.orientation_map = np.empty((height, width), dtype=Orientation)
+        # Initialize the occupancy map
+        self.occupancy_map = torch.zeros((height, width), dtype=torch.bool, device=device)
 
     def get_params(self) -> dict:
         """
@@ -79,6 +78,21 @@ class ParticleLattice:
             "width": self.width,
             "height": self.height,
         }
+    
+    ###################################
+    ## Lattice Configuration Methods ##
+    ###################################
+    def populate(self, density: float, verbose: bool =False) -> None:
+        """
+        Populate the lattice with particles at a given density.
+
+        :param density: Density of particles to be initialized.
+        """
+        n_added = self._populate(density)
+        if verbose:
+            print(f"Added {n_added} particles to the lattice.")
+        return self
+
 
     ####################################
     ## Validation and utility methods ##
@@ -110,6 +124,7 @@ class ParticleLattice:
             Orientation.DOWN.value: "↓",
             Orientation.LEFT.value: "←",
             Orientation.RIGHT.value: "→",
+            Orientation.EMPTY.value: "·",
         }
 
     def _is_empty(self, x: int, y: int) -> bool:
@@ -269,7 +284,12 @@ class ParticleLattice:
             orientation = Orientation(ori_ind)
 
         if not isinstance(orientation, Orientation):
-            raise ValueError("orientation must be an instance of Orientation enum.")
+            if not isinstance(orientation, int):
+                raise ValueError(
+                    "orientation must be an instance of Orientation enum or an integer."
+                )
+            else:
+                orientation = Orientation(orientation)
 
         # Validate that the specified cell is available for particle movement
         self._validate_availability(x, y)
@@ -299,7 +319,7 @@ class ParticleLattice:
         self.orientation_map[y, x] = None
         self.occupancy_map[y, x] = False
 
-    def populate(self, density: float) -> int:
+    def _populate(self, density: float) -> int:
         """
         Initialize the lattice with particles at a given density.
 
@@ -371,7 +391,14 @@ class ParticleLattice:
         :return: The orientation of the particle as an Orientation enum instance. None if no particle is found.
         """
         self._validate_occupancy(x, y)
-        return self.orientation_map[y, x]
+        delta_to_orientation = {
+            (0, -1): Orientation.UP,
+            (0, 1): Orientation.DOWN,
+            (-1, 0): Orientation.LEFT,
+            (1, 0): Orientation.RIGHT,
+            (0, 0): Orientation.EMPTY,
+        }
+        return delta_to_orientation[tuple(self.particles[y, x].numpy())]
 
     def move_particle(self, x: int, y: int) -> List[tuple]:
         """
@@ -463,6 +490,16 @@ class ParticleLattice:
         # Update the orientation in the particles tensor and orientation_map
         self.particles[y, x] = torch.tensor(self.orientation_deltas[new_orientation])
         self.orientation_map[y, x] = new_orientation
+
+    def rotate(self, x: int, y: int, p: float = 1.0) -> None:
+        """
+        Fill in later.
+        """
+        R = torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)
+        # R.dtype = torch.int8
+        # ic(R.dtype)
+        # ic(self.particles[y, x].dtype)
+        self.particles[y, x] = torch.matmul(R, self.particles[y, x])
 
     ##################################
     ## Obstacle and sink management ##
@@ -669,6 +706,8 @@ class ParticleLattice:
             lattice_str += row_str.strip() + "\n"
 
         return lattice_str.strip()
+    
+
 
 
 if __name__ == "__main__":
