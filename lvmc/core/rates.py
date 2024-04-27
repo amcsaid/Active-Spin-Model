@@ -38,7 +38,7 @@ class RatesManager:
         for param, value in params.items():
             setattr(self, param, value)
 
-        self.update_rates()
+        self.update_rates(self.v0, self.beta)
 
     def compute_interaction_forces(self) -> torch.Tensor:
         """
@@ -193,7 +193,7 @@ class RatesManager:
             event_type: torch.sum(self.rates[event_type]) for event_type in EventType
         }
 
-    def update_rates(self) -> None:
+    def update_rates(self, v0, beta) -> None:
         """
         Update the rates for each event type
         """
@@ -202,7 +202,7 @@ class RatesManager:
         self.update_occupancy_deltas()
         self.update_interaction_forces()
         self.compute_deltas()
-        self.compute_rates()
+        self.compute_rates(v0=v0, beta=beta)
         self.compute_rates_sums()
 
     def initialize_rates(self) -> None:

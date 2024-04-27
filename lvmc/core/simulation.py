@@ -134,7 +134,7 @@ class Simulation:
         """
         Build the simulation.
         """
-        self.rm = RatesManager(self.lattice, beta=self.g, v0=self.v0)
+        self.rm = RatesManager(self.lattice, v0=self.v0, beta=self.g)
         return self
 
     def add_particle(self, x: int, y: int, orientation: Orientation = None) -> None:
@@ -146,7 +146,7 @@ class Simulation:
         :param orientation: The orientation of the particle.
         """
         self.lattice.add_particle(x, y, orientation)
-        self.rm.update_rates()
+        self.rm.update_rates(self.v0, self.g)
 
     def perform_event(self, event: Event) -> List[tuple]:
         """
@@ -182,7 +182,7 @@ class Simulation:
         dt = self.choose_next_time()
         event = self.choose_event()
         self.perform_event(event)
-        self.rm.update_rates()
+        self.rm.update_rates(self.v0, self.g)
         self.t += dt
         self.iteration += 1
         return event
@@ -246,31 +246,6 @@ class Simulation:
         """
         total_rate = sum(self.rm.rates_sums.values())
         return - torch.log(torch.rand(1, device=device, generator=self.generator)).item() / total_rate
-
-if __name__ == "__main__":
-    from rich import print
-    # Define the parameters
-    g = 1.0
-    v0 = 1.0
-    width = 6
-    height = 5
-    density = 0.3
-
-
-    # Initialize the Simulation
-    simulation = (
-        Simulation(g, v0)
-        .add_lattice(width=width, height=height)
-        .add_particles(density=density)
-        .build()
-    )
-
-    print(simulation.lattice.visualize_lattice())
-    n = 100
-    for _ in range(n):
-        event = simulation.run()
-        print(simulation.lattice.visualize_lattice())
-        print("__"*20)
 
 
 
