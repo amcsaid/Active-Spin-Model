@@ -8,7 +8,7 @@ from enum import Enum, auto
 from typing import NamedTuple, List, Optional
 from typing import Tuple
 from lvmc.core.rates import RatesManager, EventType
-from icecream import ic
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -6,7 +6,6 @@ import torch
 import wandb
 from lvmc.core.simulation import Simulation
 from lvmc.data_handling.data_handler import SimulationDataHandler
-from icecream import ic
 
 def run_simulation(args):
     run = wandb.init(project="hopping_potts_v0", config=args.__dict__)

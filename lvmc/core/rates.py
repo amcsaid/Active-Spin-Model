@@ -218,14 +218,3 @@ class RatesManager:
         self.compute_rates_sums()
 
 
-if __name__ == "__main__":
-    from icecream import ic
-    from rich import print
-    lattice = ParticleLattice(5, 5).populate(0.3)
-    rm = RatesManager(lattice)
-    ic(rm.interaction_forces)
-    ic(rm.total_energy)
-    ic(rm.deltas)
-    ic(rm.rates)
-    ic(lattice)
-

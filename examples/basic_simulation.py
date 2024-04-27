@@ -5,7 +5,7 @@ from parameters import *
 from rich import print
 import argparse
 import torch
-from icecream import ic
+
 
 
 def main(g, v0, width, height, density, n_steps=2000):

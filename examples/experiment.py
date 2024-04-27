@@ -6,14 +6,10 @@ import torch
 import wandb
 from lvmc.core.simulation import Simulation
 from lvmc.data_handling.data_handler import SimulationDataHandler
-from icecream import ic
 
 def run_simulation(args):
     # Initialize weights and biases tracking
-    ic("starting...")
     run = wandb.init(project="hopping_potts_v0", config=args)
-    ic("wandb initialized")
-    ic(wandb.run.id)
     # Create a directory for the simulation run
     directory = os.path.join("data", f"run_{wandb.run.id}")
     os.makedirs(directory, exist_ok=True)

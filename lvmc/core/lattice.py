@@ -4,7 +4,6 @@ import numpy as np
 from enum import Enum
 from typing import List, Tuple, Optional, Union
 import copy
-from icecream import ic
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")

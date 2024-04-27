@@ -1,5 +1,7 @@
 h5py
+numpy
 pytest
+rich
 setuptools
-setuptools
+torch
 tqdm
