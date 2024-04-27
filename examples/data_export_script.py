@@ -7,14 +7,15 @@ from tqdm import tqdm
 
 def run_simulation():
     simulation = (
-        Simulation(g, v0).add_lattice(width=width, height=height)
+        Simulation(g, v0)
+        .add_lattice(width=width, height=height)
         .add_particles(density=density)
         .build()
     )
     data_collector = DataCollector(simulation)
     data_exporter = DataExporter("simulation_data.hdf5", data_collector)
 
-    n_steps = int(2e7)  # Number of steps to run the simulation for
+    n_steps = int(2e1)  # Number of steps to run the simulation for
 
     for _ in tqdm(range(n_steps)):
         event = simulation.run()

@@ -45,7 +45,7 @@ class SimulationDataHandler:
         }
 
     def collect_snapshot(self):
-        snapshot = (self.simulation.iteration, self.simulation.t, self.simulation.lattice.query_lattice_state())
+        snapshot = (self.simulation.t, self.simulation.lattice.query_lattice_state())
         self.data["snapshots"].append(snapshot)
         if len(self.data["snapshots"]) >= self.buffer_limit:
             self.flush_data()
@@ -88,31 +88,3 @@ class SimulationDataHandler:
             self.flush_data()  # Ensure all data is written before closing
 
 
-from lvmc.core.simulation import Simulation
-
-# Define the parameters
-g = 1.0
-v0 = 1.0
-width = 6
-height = 5
-density = 0.3
-
-# Initialize the Simulation
-simulation = Simulation(g, v0).add_lattice(width=width, height=height).add_particles(density=density).build()
-
-# Initialize the handler with a buffer limit to manage how often data is flushed to disk
-buffer_limit = 5  # Flush every 5 events or snapshots
-handler = SimulationDataHandler(simulation, 'simulation_data.hdf5', buffer_limit=buffer_limit)
-
-n_steps = int(20_000)  # Number of steps to run the simulation for
-for _ in range(n_steps):
-    event = simulation.run()
-    handler.collect_event(event)  # Collect event data
-    handler.collect_snapshot()  # Collect snapshot data
-
-# Ensure all remaining data is flushed and file is properly closed
-handler.close()
-
-print("Simulation completed and data exported.")
-
-    

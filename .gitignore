@@ -172,3 +172,5 @@ xp_nb.ipynb
 # Visual Studio Code
 .vscode/
 wandb/
+log_*
+output*

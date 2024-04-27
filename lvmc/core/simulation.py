@@ -19,30 +19,20 @@ class Event(NamedTuple):
     x: int
     y: int
 
-    def is_reorientation(self) -> bool:
-        return self.etype in {
-            EventType.REORIENTATION_UP,
-            EventType.REORIENTATION_LEFT,
-            EventType.REORIENTATION_DOWN,
-            EventType.REORIENTATION_RIGHT,
-        }
-
     def is_migration(self) -> bool:
         return self.etype == EventType.HOP
 
-    def is_rotation(self) -> bool:
-        return self.etype == EventType.ROTATE
+    def is_cw_rotation(self) -> bool:
+        return self.etype == EventType.ROTATE_CW
+    
+    def is_ccw_rotation(self) -> bool:
+        return self.etype == EventType.ROTATE_CCW
+    
+    def is_flip(self) -> bool:
+        return self.etype == EventType.FLIP
 
     def is_birth(self) -> bool:
         return self.etype == EventType.BIRTH
-
-    def is_transport(self) -> bool:
-        return self.etype in {
-            EventType.TRANSPORT_UP,
-            EventType.TRANSPORT_LEFT,
-            EventType.TRANSPORT_DOWN,
-            EventType.TRANSPORT_RIGHT,
-        }
 
 
 class Simulation:
@@ -66,6 +56,7 @@ class Simulation:
             self.generator.manual_seed(seed)
         # Initialize time
         self.t = 0.0
+        self.iteration = 0
 
     def add_lattice(self, width: int, height: int) -> None:
         """
@@ -86,20 +77,6 @@ class Simulation:
         :param direction: The direction of the control field.
         """
         self.control_field = MagneticField(direction)
-        return self
-
-    def add_flow(self, flow_params: dict) -> None:
-        """
-        Add a flow to the simulation.
-
-        :param flow_params: A dictionary containing the parameters of the flow.
-        """
-        if flow_params["type"] == "Poiseuille":
-            self.flow = PoiseuilleFlow(
-                width=self.width, height=self.height, v1=flow_params["v1"]
-            )
-            print("Added Poiseuille flow to the simulation.")
-        # Increment the number of event types
         return self
 
     def add_obstacles(self, obstacles: torch.Tensor) -> None:
@@ -150,14 +127,14 @@ class Simulation:
 
         :param density: The density of the particles.
         """
-        n_added = self.lattice.populate(density)
+        _ = self.lattice._populate(density)
         return self
 
     def build(self) -> None:
         """
         Build the simulation.
         """
-        self.initialize_rates()
+        self.rm = RatesManager(self.lattice, beta=self.g, v0=self.v0)
         return self
 
     def add_particle(self, x: int, y: int, orientation: Orientation = None) -> None:
@@ -170,21 +147,6 @@ class Simulation:
         """
         self.lattice.add_particle(x, y, orientation)
         self.rm.update_rates()
-
-    def populate_lattice(self, density: float) -> None:
-        """
-        Populate the lattice with particles.
-
-        :param density: The density of the particles.
-        """
-        n_added = self.lattice.populate(density)
-        self.rm.update_rates()
-
-    def initialize_rates(self) -> None:
-        """
-        Instantiate the rates manager.
-        """
-        self.rm = RatesManager(self.lattice, beta=self.g, v0=self.v0)
 
     def perform_event(self, event: Event) -> List[tuple]:
         """
@@ -199,12 +161,17 @@ class Simulation:
                     the coordinates (x, y) on the lattice where the event occurs.
         """
 
-        if event.is_migration() and not self.lattice._is_empty(event.x, event.y):
-            new_pos = self.lattice.move_particle(event.x, event.y)
-            return [(event.x, event.y)] + new_pos
+        if event.is_migration():
+            self.lattice.move_particle(event.x, event.y)
 
-        elif event.is_rotation() and not self.lattice._is_empty(event.x, event.y):
+        elif event.is_cw_rotation():
             self.lattice.rotate(event.x, event.y)
+        
+        elif event.is_ccw_rotation():
+            self.lattice.rotate(event.x, event.y, cw=False)
+        
+        elif event.is_flip():
+            self.lattice.flip(event.x, event.y)
 
     def run(self) -> Event:
         """
@@ -212,9 +179,12 @@ class Simulation:
 
         :return: An Optional tuple (event_type, x, y) representing the event, or None.
         """
+        dt = self.choose_next_time()
         event = self.choose_event()
-        affected_sites = self.perform_event(event)
+        self.perform_event(event)
         self.rm.update_rates()
+        self.t += dt
+        self.iteration += 1
         return event
 
     def sample_site(self, rates: torch.Tensor) -> Tuple[int, int]:
@@ -267,3 +237,40 @@ class Simulation:
         event_type = self.sample_event_type(self.rm.rates_sums)
         y, x = self.sample_site(self.rm.rates[event_type])
         return Event(event_type, x, y)
+    
+    def choose_next_time(self) -> float:
+        """
+        Sample the time of the next event.
+
+        :return: the time of the next event
+        """
+        total_rate = sum(self.rm.rates_sums.values())
+        return - torch.log(torch.rand(1, device=device, generator=self.generator)).item() / total_rate
+
+if __name__ == "__main__":
+    from rich import print
+    # Define the parameters
+    g = 1.0
+    v0 = 1.0
+    width = 6
+    height = 5
+    density = 0.3
+
+
+    # Initialize the Simulation
+    simulation = (
+        Simulation(g, v0)
+        .add_lattice(width=width, height=height)
+        .add_particles(density=density)
+        .build()
+    )
+
+    print(simulation.lattice.visualize_lattice())
+    n = 100
+    for _ in range(n):
+        event = simulation.run()
+        print(simulation.lattice.visualize_lattice())
+        print("__"*20)
+
+
+

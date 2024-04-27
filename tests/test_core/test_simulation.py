@@ -21,7 +21,6 @@ class TestSimulation:
         simulation = (
             Simulation(g, v0)
             .add_lattice(width=width, height=height)
-            .add_flow(flow_params)
             .add_obstacles(obstacles)
             .add_particles(density=density)
             .build()

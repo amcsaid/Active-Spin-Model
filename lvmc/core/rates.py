@@ -5,29 +5,36 @@ This module is the rates manager module. It computes the energy per site, the Ha
 
 from typing import Tuple
 import torch
-from lvmc.core.lattice import ParticleLattice, Orientation
-import torch.nn.functional as F
-from icecream import ic
-import math
+from lvmc.core.lattice import ParticleLattice
 from enum import Enum, auto
 
 
 class EventType(Enum):
     FLIP = 0
     HOP = auto()
-    ROTATE = auto()
-    ROTATE_NEG = auto()
+    ROTATE_CW = auto()
+    ROTATE_CCW = auto()
 
 
 class RatesManager:
+    R = torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)  # Rotation matrix
+
     def __init__(self, lattice: ParticleLattice, **params):
         self.lattice = lattice
         self.params = params
-        self.interaction_forces = torch.zeros(lattice.height, lattice.width, 2)
+        self.interaction_forces = torch.zeros(
+            lattice.height, lattice.width, 2, dtype=torch.int8
+        )
+        self.deltas = {}
         self.rates = {}
         self.rates_sums = {}
-        self.beta = 1.0
-        self.v0 = 1.0
+        self.delta_computers = {
+            EventType.ROTATE_CW: self.compute_delta_rotate,
+            EventType.HOP: self.compute_delta_hop,
+            EventType.FLIP: self.compute_delta_flip,
+            EventType.ROTATE_CCW: self.compute_delta_rotate_neg,
+        }
+
         for param, value in params.items():
             setattr(self, param, value)
 
@@ -38,60 +45,43 @@ class RatesManager:
         Count the number of neighbours with a specific orientation.
         :return: Tensor of shape (num_orientations, lattice.height, lattice.width)
         """
-
-        # # Create a kernel to count the number of neighbours
-        # kernel = (
-        #     torch.tensor([[0, 1, 0], [1, 0, 1], [0, 1, 0]], dtype=torch.float32)
-        #     .unsqueeze(0)
-        #     .unsqueeze(0)
-        # )
-
-        # # Replicate the kernel for each orientation
-        # kernel = kernel.repeat(2, 1, 1, 1)
-        # # Pad the particles tensor to handle boundary conditions
-        # padded_particles = F.pad(
-        #     self.lattice.particles.permute(2, 0, 1), pad=(1, 1, 1, 1), mode="circular"
-        # ).float()
-
-        # # Perform convolution to count the number of nearest neighbors with each orientation
-        # self.interaction_forces = F.conv2d(
-        #     padded_particles, kernel, padding=0, groups=2
-        # ).permute(1, 2, 0)
         delta_e = torch.tensor([1, 0], dtype=torch.int8)
         delta_s = torch.tensor([0, 1], dtype=torch.int8)
 
-        y, x = torch.meshgrid(
-            torch.arange(self.lattice.height),
-            torch.arange(self.lattice.width),
-            indexing="ij",
-        ) 
+        y, x = self._get_meshgrid()
 
-        x_s = (x + delta_s[0]) % self.lattice.width
-        y_s = (y + delta_s[1]) % self.lattice.height
+        x_s, y_s = self._compute_new_positions(x, y, delta_s[0], delta_s[1])
+        x_e, y_e = self._compute_new_positions(x, y, delta_e[0], delta_e[1])
+        x_n, y_n = self._compute_new_positions(x, y, -delta_s[0], -delta_s[1])
+        x_w, y_w = self._compute_new_positions(x, y, -delta_e[0], -delta_e[1])
 
-        x_e = (x + delta_e[0]) % self.lattice.width
-        y_e = (y + delta_e[1]) % self.lattice.height
+        sigma_s = self._perform_change_of_coordinates(self.lattice.particles, x_s, y_s)
+        sigma_e = self._perform_change_of_coordinates(self.lattice.particles, x_e, y_e)
+        sigma_n = self._perform_change_of_coordinates(self.lattice.particles, x_n, y_n)
+        sigma_w = self._perform_change_of_coordinates(self.lattice.particles, x_w, y_w)
 
-        x_n = (x - delta_s[0]) % self.lattice.width
-        y_n = (y - delta_s[1]) % self.lattice.height
+        return sigma_s + sigma_e + sigma_n + sigma_w
 
-        x_w = (x - delta_e[0]) % self.lattice.width
-        y_w = (y - delta_e[1]) % self.lattice.height
+    def update_interaction_forces(self) -> None:
+        """
+        Update the interaction forces for the lattice
+        """
+        self.interaction_forces = self.compute_interaction_forces()
 
-        sigma_s = self.lattice.particles[y_s, x_s]
-        sigma_e = self.lattice.particles[y_e, x_e]
-        sigma_n = self.lattice.particles[y_n, x_n]
-        sigma_w = self.lattice.particles[y_w, x_w]
-
-        self.interaction_forces = sigma_s + sigma_e + sigma_n + sigma_w
+    @staticmethod
+    def _perform_change_of_coordinates(
+        tensor: torch.Tensor, new_x: torch.Tensor, new_y: torch.Tensor
+    ) -> torch.Tensor:
+        return tensor[new_y.type(torch.int), new_x.type(torch.int)]
 
     def compute_energies(self) -> torch.Tensor:
         """
         Compute the energy per site
         :return: Tensor of shape (lattice.height, lattice.width)
         """
-        energies = -torch.sum(self.interaction_forces * self.lattice.particles, dim=2)
-        return energies
+        return self.compute_dot_product(
+            self.interaction_forces, self.lattice.particles
+        )  # -torch.sum(self.interaction_forces * self.lattice.particles, dim=2)
 
     @property
     def total_energy(self) -> torch.Tensor:
@@ -101,153 +91,141 @@ class RatesManager:
         """
         return torch.sum(self.compute_energies())
 
-    def compute_delta(self, event_type: EventType) -> torch.Tensor:
-        """
-        Compute the change in energy for each event type
-        :param event_type: The type of event to compute the change in energy for
-        :return: The change in energy for each site for the given event type.
-        """
-        if isinstance(event_type, int):
-            event_type = EventType(event_type)
-        if event_type == EventType.ROTATE:
-            return self.compute_rotate_delta()
-
-        if event_type == EventType.HOP:
-            return self.compute_hop_delta()
-
-        if event_type == EventType.FLIP:
-            return -4 * self.energies
-
-        if event_type == EventType.ROTATE_NEG:
-            return -self.compute_rotate_delta() - 4 * self.energies
-
-    def compute_rotate_delta(self) -> torch.Tensor:
-        """
-        Compute the change in energy for a rotation event
-        :return: The change in energy for each site for a rotation event
-        """
-        rotation_matrix = torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)
-        rotated_particles = torch.matmul(self.lattice.particles, rotation_matrix)
-        H_ortho = -torch.sum(self.interaction_forces * rotated_particles, dim=2)
-        return 2 * (H_ortho - self.energies) + self.occupancy_deltas
-
-    def compute_new_positions(self):
-        y, x = torch.meshgrid(
-            torch.arange(self.lattice.height),
-            torch.arange(self.lattice.width),
+    def _get_meshgrid(self):
+        return torch.meshgrid(
+            torch.arange(self.lattice.height, dtype=torch.int8),
+            torch.arange(self.lattice.width, dtype=torch.int8),
             indexing="ij",
         )
-        self.forward_x = (x + self.lattice.particles[...,0]) % self.lattice.width
-        self.forward_y = (y + self.lattice.particles[...,1]) % self.lattice.height
 
-        self.backward_x = (x - self.lattice.particles[...,0]) % self.lattice.width
-        self.backward_y = (y - self.lattice.particles[...,1]) % self.lattice.height
+    def _compute_new_positions(self, x, y, dx, dy):
+        return (x + dx) % self.lattice.width, (y + dy) % self.lattice.height
 
-        # Rotate 90 degrees. pending to check if it is correct
-        self.right_x = (x + self.lattice.particles[...,1]) % self.lattice.width
-        self.right_y = (y - self.lattice.particles[...,0]) % self.lattice.height
+    def apply_translational_transformations(self) -> None:
+        """
+        Apply translational transformations to the lattice
+        """
+        y, x = self._get_meshgrid()
+        dx, dy = self.lattice.particles[..., 0], self.lattice.particles[..., 1]
+        self.forward_x, self.forward_y = self._compute_new_positions(x, y, dx, dy)
+        # self.backward_x, self.backward_y = self._compute_new_positions(x, y, -dx, -dy)
+        # self.right_x, self.right_y = self._compute_new_positions(x, y, dy, -dx)
+        # self.left_x, self.left_y = self._compute_new_positions(x, y, -dy, dx)
 
-        self.left_x = (x - self.lattice.particles[...,1]) % self.lattice.width
-        self.left_y = (y + self.lattice.particles[...,0]) % self.lattice.height
-    
-    def check_new_positions(self):
-        self.compute_new_positions()
-        sigma_forward = self.lattice.particles[self.forward_y, self.forward_x]
-        sigma_backward = self.lattice.particles[self.backward_y, self.backward_x]
-        sigma_right = self.lattice.particles[self.right_y, self.right_x]
-        sigma_left = self.lattice.particles[self.left_y, self.left_x]
-        F = sigma_forward + sigma_backward + sigma_right + sigma_left
-        return F
+    @staticmethod
+    def compute_dot_product(a, b):
+        return -torch.sum(a * b, dim=-1)
 
-    def compute_hop_delta(self) -> torch.Tensor:
+    def compute_deltas(self):
+        """
+        Compute the change in energy for each event type and store in a dictionary.
+        """
 
-        F_new = self.interaction_forces[self.forward_y, self.forward_x]
-        H_new = (
-            -torch.sum(F_new * self.lattice.particles, dim=2)
-            + self.occupancy_deltas
-            + self.ve_deltas
+        for event_type, compute_method in self.delta_computers.items():
+            self.deltas[event_type] = compute_method()
+
+    def compute_delta_rotate(self):
+        transformed_particles = torch.tensordot(
+            self.lattice.particles,
+            RatesManager.R - torch.eye(2, dtype=torch.int8),
+            dims=1,
         )
-        return 2 * (H_new - self.energies) 
+        return self.compute_dot_product(transformed_particles, self.interaction_forces)
 
-    def compute_volume_exclusion_delta(self) -> torch.Tensor:
-        sigma_new = self.lattice.particles[self.forward_y, self.forward_x].type(torch.float)
+    def compute_delta_hop(self):
+        new_field = (
+            self._perform_change_of_coordinates(
+                self.interaction_forces, self.forward_x, self.forward_y
+            )
+            - self.lattice.particles
+        )
+        return self.compute_dot_product(
+            new_field - self.interaction_forces, self.lattice.particles
+        )
+
+    def compute_delta_flip(self):
+        return -2 * self.compute_dot_product(
+            self.lattice.particles, self.interaction_forces
+        )
+
+    def compute_delta_rotate_neg(self):
+        transformed_particles = torch.tensordot(
+            self.lattice.particles,
+            -RatesManager.R - torch.eye(2, dtype=torch.int8),
+            dims=1,
+        )
+        return self.compute_dot_product(transformed_particles, self.interaction_forces)
+
+    def update_volume_exclusion_deltas(self) -> torch.Tensor:
+        sigma_new = self.lattice.particles[
+            self.forward_y.type(torch.int), self.forward_x.type(torch.int)
+        ].type(torch.float)
         sigma_new_norm = torch.norm(sigma_new, dim=-1)
         self.ve_deltas = sigma_new_norm / (sigma_new_norm - 1)
 
-    def compute_occupancy_delta(self) -> torch.Tensor:
+    def update_occupancy_deltas(self) -> torch.Tensor:
         self.occupancy_deltas = 1 / torch.norm(
             self.lattice.particles.type(torch.float), dim=-1
-        )
+        ) -1 
 
-    def compute_rates(self) -> None:
+    def compute_rates(self, beta: float = 1, v0: float = 1) -> None:
         """
-        Compute the rates for each event type
-        :return: A dictionary with the rates for each event type
+        Compute the rates for each event type using the computed deltas.
+        :param beta: The inverse temperature
+        :param v0: The base transition rate
         """
-        self.rates[EventType.ROTATE] = torch.exp(
-            -self.beta * self.compute_delta(EventType.ROTATE)
-        )
-        self.rates[EventType.HOP] = self.v0 * torch.exp(-self.ve_deltas) + torch.exp(
-            -self.beta * self.compute_delta(EventType.HOP)
-        )
-        self.rates[EventType.FLIP] = torch.exp(
-            -self.beta * self.compute_delta(EventType.FLIP)
-        )
-        self.rates[EventType.ROTATE_NEG] = torch.exp(
-            -self.beta * self.compute_delta(EventType.ROTATE_NEG)
-        )
+        # Define the specific computation for each rate based on the event type
+        self.rates = {
+            event_type: torch.exp(
+                -beta * self.deltas[event_type] - self.occupancy_deltas
+            )
+            for event_type in EventType
+        }
+        self.rates[EventType.HOP] += 1
+        self.rates[EventType.HOP] *= v0 * torch.exp(-self.ve_deltas - self.occupancy_deltas)
 
     def compute_rates_sums(self) -> None:
         """
         Compute the sum of the rates for each event type
         :return: A dictionary with the sum of the rates for each event type
         """
-        self.rates_sums[EventType.ROTATE] = torch.sum(
-            self.rates[EventType.ROTATE]
-        )
-        self.rates_sums[EventType.HOP] = torch.sum(self.rates[EventType.HOP])
+        self.rates_sums = {
+            event_type: torch.sum(self.rates[event_type]) for event_type in EventType
+        }
 
     def update_rates(self) -> None:
         """
         Update the rates for each event type
         """
-        self.compute_new_positions()
-        self.compute_volume_exclusion_delta()
-        self.compute_occupancy_delta()
-        self.compute_interaction_forces()
-        self.energies = self.compute_energies()
+        self.apply_translational_transformations()
+        self.update_volume_exclusion_deltas()
+        self.update_occupancy_deltas()
+        self.update_interaction_forces()
+        self.compute_deltas()
+        self.compute_rates()
+        self.compute_rates_sums()
+
+    def initialize_rates(self) -> None:
+        """
+        Initialize the rates for each event type
+        """
+        self.apply_translational_transformations()
+        self.update_volume_exclusion_deltas()
+        self.update_occupancy_deltas()
+        self.update_interaction_forces()
+        self.compute_deltas()
         self.compute_rates()
         self.compute_rates_sums()
 
 
 if __name__ == "__main__":
-    lattice = ParticleLattice(5, 5)
-    lattice.populate(0.6)
+    from icecream import ic
+    from rich import print
+    lattice = ParticleLattice(5, 5).populate(0.3)
     rm = RatesManager(lattice)
+    ic(rm.interaction_forces)
+    ic(rm.total_energy)
+    ic(rm.deltas)
+    ic(rm.rates)
+    ic(lattice)
 
-
-    H = 4000
-    W = 300
-
-    small_lattice = ParticleLattice(width=W, height=H)
-
-    small_lattice.populate(0.3)
-
-    sigma = small_lattice.particles
-
-
-    import time
-    rm = RatesManager(lattice)
-    # rm.update_rates()
-    # ic(rm.rates)
-    # ic(rm.rates_sums)
-    # ic(rm.total_energy)
-    start = time.time()
-    f = rm.check_new_positions()
-    end = time.time()
-    ic(f"new: {end - start}")
-    start = time.time()
-    rm.compute_interaction_forces()
-    end = time.time()
-    ic(f"with conv: {end - start}")
-    ic(f"are the two tensors equal? {torch.equal(f, rm.interaction_forces)}")

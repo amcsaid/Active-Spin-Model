@@ -27,8 +27,6 @@ class ParticleLattice:
     ## Initialization and Basic Configuration ##
     ############################################
 
-    NUM_ORIENTATIONS = len(Orientation)  # Class level constant
-
     def __init__(
         self, width: int, height: int, generator: torch.Generator = None, dim=2
     ):
@@ -67,7 +65,9 @@ class ParticleLattice:
         # Initialize the orientation map
         self.orientation_map = np.empty((height, width), dtype=Orientation)
         # Initialize the occupancy map
-        self.occupancy_map = torch.zeros((height, width), dtype=torch.bool, device=device)
+        self.occupancy_map = torch.zeros(
+            (height, width), dtype=torch.bool, device=device
+        )
 
     def get_params(self) -> dict:
         """
@@ -78,11 +78,11 @@ class ParticleLattice:
             "width": self.width,
             "height": self.height,
         }
-    
+
     ###################################
     ## Lattice Configuration Methods ##
     ###################################
-    def populate(self, density: float, verbose: bool =False) -> None:
+    def populate(self, density: float, verbose: bool = False) -> None:
         """
         Populate the lattice with particles at a given density.
 
@@ -92,7 +92,6 @@ class ParticleLattice:
         if verbose:
             print(f"Added {n_added} particles to the lattice.")
         return self
-
 
     ####################################
     ## Validation and utility methods ##
@@ -137,13 +136,16 @@ class ParticleLattice:
         """
         return not self.occupancy_map[y, x]
 
-    def _get_target_position(self, x: int, y: int, orientation) -> tuple:
+    def _get_target_position(
+        self, x: int, y: int, orientation: Optional[Orientation]
+    ) -> tuple:
         """
         Get the expected position of a particle at (x, y) with a given orientation.
 
         :param orientation: The orientation of the particle.
         :param x: Current x-coordinate of the particle.
         :param y: Current y-coordinate of the particle.
+        :param orientation: The direction in which the particle is moving.
         :return: The expected position of the particle.
         """
 
@@ -400,7 +402,7 @@ class ParticleLattice:
         }
         return delta_to_orientation[tuple(self.particles[y, x].numpy())]
 
-    def move_particle(self, x: int, y: int) -> List[tuple]:
+    def move_particle(self, x: int, y: int) -> None:
         """
         Move a particle at (x, y) with a given orientation to the new position determined by its current orientation.
         :param x: Current x-coordinate of the particle.
@@ -491,15 +493,24 @@ class ParticleLattice:
         self.particles[y, x] = torch.tensor(self.orientation_deltas[new_orientation])
         self.orientation_map[y, x] = new_orientation
 
-    def rotate(self, x: int, y: int, p: float = 1.0) -> None:
+    def rotate(self, x: int, y: int, cw: bool=True) -> None:
         """
-        Fill in later.
+        Rotate the orientation of a particle at a given location CCW or CW.
+        :param x: x-coordinate of the particle.
+        :param y: y-coordinate of the particle.
+        :param cw: If True, rotate the particle CW, otherwise rotate CCW.
         """
-        R = torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)
-        # R.dtype = torch.int8
-        # ic(R.dtype)
-        # ic(self.particles[y, x].dtype)
+        R = -(2 * cw - 1) * torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)
+
         self.particles[y, x] = torch.matmul(R, self.particles[y, x])
+    
+    def flip(self, x: int, y: int) -> None:
+        """
+        Flip the orientation of a particle at a given position.
+        :param x: x-coordinate of the particle.
+        :param y: y-coordinate of the particle.
+        """
+        self.particles[y, x] = -self.particles[y, x]
 
     ##################################
     ## Obstacle and sink management ##
@@ -706,13 +717,3 @@ class ParticleLattice:
             lattice_str += row_str.strip() + "\n"
 
         return lattice_str.strip()
-    
-
-
-
-if __name__ == "__main__":
-    from rich import print
-
-    lattice = ParticleLattice(5, 5)
-    lattice.populate(0.3)
-    print(lattice.visualize_lattice())
