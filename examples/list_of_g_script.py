@@ -2,11 +2,11 @@ import subprocess
 import sys
 
 # List of g values to run simulations on
-g_values = [0.5, 1.0, 1.5, 2.5]
+g_values = [0, 0.1, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5]
 
 # Base command that calls your Python script
 base_command = [sys.executable, 'examples/g_exp_script.py', '--width', '49', '--height', '49', 
-                '--density', '0.3', '--n_steps', '20000000', '--v0', '100.0']
+                '--density', '0.3', '--n_steps', '20000000', '--v0', '10.0']
 
 # Start all simulations in parallel
 processes = []
