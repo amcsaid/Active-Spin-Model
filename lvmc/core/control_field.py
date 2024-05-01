@@ -2,9 +2,31 @@ from lvmc.core.lattice import ParticleLattice, Orientation  # for type hinting
 import numpy as np
 
 
-class MagneticField:
+
+class ControlField:
     """
-    Class for managing magnetic field effects on particles.
+    Class for managing the control field that affects the particles.
+    """
+
+    def apply(self, lattice: ParticleLattice) -> None:
+        """
+        Apply the control field to the lattice.
+
+        :param lattice: The lattice object.
+        :type lattice: ParticleLattice
+        """
+        pass
+
+    def get_state(self) -> np.ndarray:
+        """
+        Get the state of the control field.
+
+        :return: np.ndarray - The state of the control field.
+        """
+        pass
+class MagneticField(ControlField):
+    """
+    Class for managing a global magnetic field effects on particles.
     """
 
     def __init__(self, initial_direction: int = 0):
@@ -19,7 +41,7 @@ class MagneticField:
         """
         self.current_direction = initial_direction
 
-    def set_direction(self, direction: int) -> None:
+    def update(self, direction: int) -> None:
         """
         Set the current direction of the magnetic field.
 
@@ -34,31 +56,21 @@ class MagneticField:
         :param lattice: The lattice object.
         :type lattice: ParticleLattice
         """
-        # Rotate the lattice by 90 degrees in the prescribed direction, using numpy.roll
-        lattice.particles[...] = lattice.particles.roll(self.current_direction, dims=0)
+        if self.current_direction == 0:
+            pass
+        else:
+            cw = True if self.current_direction == -1 else False
+            lattice.rotate_particles(cw)
 
-        # Function to safely get the value from an Orientation or return a placeholder
-        def get_orientation_value(orientation):
-            return -1 if orientation is None else orientation.value
+    def get_state(self) -> np.ndarray:
+        """
+        Get the state of the magnetic field.
 
-        # Vectorize the function
-        get_value_vectorized = np.vectorize(get_orientation_value)
-
-        # Apply the function to the orientation map
-        numeric_orientation_map = get_value_vectorized(lattice.orientation_map)
-
-        # Apply rotation
-        if self.current_direction == 1:  # Clockwise rotation
-            numeric_orientation_map = (numeric_orientation_map + 1) % 4
-        elif self.current_direction == -1:  # Counterclockwise rotation
-            numeric_orientation_map = (numeric_orientation_map - 1) % 4
-
-        # Convert back to Orientation enum, handling the placeholder
-        lattice.orientation_map = np.vectorize(
-            lambda x: None if x == -1 else Orientation(x)
-        )(numeric_orientation_map)
-
-    def get_current_direction(self) -> int:
+        :return: np.ndarray - The state of the magnetic field.
+        """
+        return np.array([self.current_direction])
+    
+    def get_direction(self) -> int:
         """
         Get the current direction of the magnetic field.
 
