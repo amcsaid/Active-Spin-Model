@@ -67,6 +67,36 @@ class ParticleLattice:
         self.occupancy_map = torch.zeros(
             (height, width), dtype=torch.bool, device=device
         )
+    
+    def add_particles(self, **kwargs) -> None:
+        """
+        Add particles to the lattice. The particles can be added using the following methods:
+        - density: Add particles at a given density.
+        - spins: Add particles with specific spins.
+        - region: Add particles in a specific region. The region is specified as a tuple of (x1, y1, x2, y2).
+        :param density: Density of particles to be initialized.
+        :param spins: A tensor of spins to initialize the lattice.
+        :param region: A tuple of (x1, y1, x2, y2) representing the region where particles will be added.
+        :param orientation: The orientation of the particles.
+        """
+        if "density" in kwargs:
+            self.populate(kwargs["density"])
+        
+        if "spins" in kwargs:
+            spins = kwargs["spins"]
+            # Validate the shape of the spins tensor
+            if spins.shape[:-1] != (self.height, self.width):
+                raise ValueError(
+                    f"Spins tensor must match the lattice dimensions. \n >>> {spins.shape=}, {(self.height, self.width)=}"
+                )
+            self.particles = spins
+        
+        if "region" in kwargs:
+            region = kwargs["region"]
+            orientation = kwargs.get("orientation", None)
+            n_particles = kwargs.get("n_particles", 1)
+            self.add_particle_flux(region, orientation, n_particles)
+        return self
 
     def get_params(self) -> dict:
         """
@@ -91,6 +121,7 @@ class ParticleLattice:
         if verbose:
             print(f"Added {n_added} particles to the lattice.")
         return self
+            
 
     ####################################
     ## Validation and utility methods ##
@@ -133,7 +164,8 @@ class ParticleLattice:
         :param y: y-coordinate of the lattice.
         :return: True if the no particle is present at the cell, False otherwise.
         """
-        return not self.occupancy_map[y, x]
+        return not self.particles[y, x].any()
+
 
     def _get_target_position(
         self, x: int, y: int, orientation: Optional[Orientation]
@@ -510,6 +542,29 @@ class ParticleLattice:
         :param y: y-coordinate of the particle.
         """
         self.particles[y, x] = -self.particles[y, x]
+
+    def compute_rotated_particles(self, cw: bool=True, mask: Optional[torch.Tensor]=None) -> torch.Tensor:
+        """
+        Compute the rotated particles for a given mask.
+        :param cw: If True, rotate the particles CW, otherwise rotate CCW.
+        :param mask: A binary mask indicating the particles to rotate.
+        :return: The rotated particles.
+        """
+        R = (2 * cw - 1) * torch.tensor([[0, 1], [-1, 0]], dtype=torch.int8)
+        rotated_particles = torch.matmul(self.particles, R)
+        if mask is not None:
+            rotated_particles = rotated_particles * mask.unsqueeze(-1) + self.particles * (~mask).unsqueeze(-1)
+
+        return rotated_particles
+    
+    def rotate_particles(self, cw: bool=True, mask: Optional[torch.Tensor]=None) -> None:
+        """
+        Rotate the particles in the lattice.
+        :param cw: If True, rotate the particles CW, otherwise rotate CCW.
+        :param mask: A binary mask indicating the particles to rotate.
+        """
+        self.particles = self.compute_rotated_particles(cw, mask)
+
 
     ##################################
     ## Obstacle and sink management ##
