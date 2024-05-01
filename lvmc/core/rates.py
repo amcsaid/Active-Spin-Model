@@ -81,8 +81,7 @@ class RatesManager:
         """
         return self.compute_dot_product(
             self.interaction_forces, self.lattice.particles
-        )  # -torch.sum(self.interaction_forces * self.lattice.particles, dim=2)
-
+        )
     @property
     def total_energy(self) -> torch.Tensor:
         """
@@ -108,9 +107,6 @@ class RatesManager:
         y, x = self._get_meshgrid()
         dx, dy = self.lattice.particles[..., 0], self.lattice.particles[..., 1]
         self.forward_x, self.forward_y = self._compute_new_positions(x, y, dx, dy)
-        # self.backward_x, self.backward_y = self._compute_new_positions(x, y, -dx, -dy)
-        # self.right_x, self.right_y = self._compute_new_positions(x, y, dy, -dx)
-        # self.left_x, self.left_y = self._compute_new_positions(x, y, -dy, dx)
 
     @staticmethod
     def compute_dot_product(a, b):
@@ -205,7 +201,7 @@ class RatesManager:
         self.compute_rates(v0=v0, beta=beta)
         self.compute_rates_sums()
 
-    def initialize_rates(self) -> None:
+    def initialize_rates(self, v0, beta) -> None:
         """
         Initialize the rates for each event type
         """
@@ -214,7 +210,7 @@ class RatesManager:
         self.update_occupancy_deltas()
         self.update_interaction_forces()
         self.compute_deltas()
-        self.compute_rates()
+        self.compute_rates(v0=v0, beta=beta)
         self.compute_rates_sums()
 
 
