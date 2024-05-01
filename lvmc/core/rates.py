@@ -81,8 +81,7 @@ class RatesManager:
         """
         return self.compute_dot_product(
             self.interaction_forces, self.lattice.particles
-        )  # -torch.sum(self.interaction_forces * self.lattice.particles, dim=2)
-
+        )
     @property
     def total_energy(self) -> torch.Tensor:
         """
@@ -127,31 +126,23 @@ class RatesManager:
     def compute_delta_rotate(self):
         transformed_particles = torch.tensordot(
             self.lattice.particles,
-            RatesManager.R - torch.eye(2, dtype=torch.int8),
+            RatesManager.R,
             dims=1,
         )
         return self.compute_dot_product(transformed_particles, self.interaction_forces)
 
     def compute_delta_hop(self):
-        new_field = (
-            self._perform_change_of_coordinates(
-                self.interaction_forces, self.forward_x, self.forward_y
-            )
-            - self.lattice.particles
-        )
-        return self.compute_dot_product(
-            new_field - self.interaction_forces, self.lattice.particles
-        )
+        return torch.zeros(self.lattice.height, self.lattice.width)
 
     def compute_delta_flip(self):
-        return -2 * self.compute_dot_product(
+        return - self.compute_dot_product(
             self.lattice.particles, self.interaction_forces
         )
 
     def compute_delta_rotate_neg(self):
         transformed_particles = torch.tensordot(
             self.lattice.particles,
-            -RatesManager.R - torch.eye(2, dtype=torch.int8),
+            -RatesManager.R,
             dims=1,
         )
         return self.compute_dot_product(transformed_particles, self.interaction_forces)
@@ -205,7 +196,7 @@ class RatesManager:
         self.compute_rates(v0=v0, beta=beta)
         self.compute_rates_sums()
 
-    def initialize_rates(self) -> None:
+    def initialize_rates(self, v0, beta) -> None:
         """
         Initialize the rates for each event type
         """
