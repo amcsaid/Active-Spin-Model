@@ -2,10 +2,8 @@ import torch
 import numpy as np
 from typing import Optional, Tuple
 from lvmc.core.lattice import ParticleLattice, Orientation
-from lvmc.core.magnetic_field import MagneticField
-from lvmc.core.flow import PoiseuilleFlow
-from enum import Enum, auto
-from typing import NamedTuple, List, Optional
+from lvmc.core.control_field import MagneticField
+from typing import NamedTuple, Optional, List
 from typing import Tuple
 from lvmc.core.rates import RatesManager, EventType
 
@@ -179,11 +177,11 @@ class Simulation:
 
         :return: An Optional tuple (event_type, x, y) representing the event, or None.
         """
-        dt = self.choose_next_time()
+        self.delta_t = self.choose_next_time()
         event = self.choose_event()
         self.perform_event(event)
         self.rm.update_rates(self.v0, self.g)
-        self.t += dt
+        self.t += self.delta_t
         self.iteration += 1
         return event
 
@@ -199,7 +197,7 @@ class Simulation:
         total_rate = rates_flat.sum().item()
 
         if total_rate == 0:
-            raise ValueError
+            raise ValueError("The total rate is zero. Cannot sample a site.")
 
         random_value = (
             torch.rand(1, device=device, generator=self.generator).item() * total_rate
@@ -246,6 +244,15 @@ class Simulation:
         """
         total_rate = sum(self.rm.rates_sums.values())
         return - torch.log(torch.rand(1, device=device, generator=self.generator)).item() / total_rate
+    
+    def apply_control_field(self, control:int) -> None:
+        """
+        Apply the control field to the lattice.
+
+        :param direction: The direction of the control field.
+        """
+        self.control_field.update(control)
+        self.control_field.apply(self.lattice)
 
 
 
