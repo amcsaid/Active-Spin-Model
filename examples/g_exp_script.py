@@ -8,13 +8,14 @@ from lvmc.core.simulation import Simulation
 from lvmc.data_handling.data_handler import SimulationDataHandler
 
 def run_simulation(args):
-    run = wandb.init(project="hopping_potts_v0", config=args.__dict__)
+    run = wandb.init(project="hopping_potts_v0.0.1", config=args.__dict__)
 
-    # Include 'g' in the directory name
     directory = os.path.join("data", f"g_{args.g}_run_{wandb.run.id}")
     os.makedirs(directory, exist_ok=True)
     
     fname = os.path.join(directory, "simulation_data.hdf5")
+    csv_fname = os.path.join(directory, f"stat_data.csv")  
+    
     simulation = (
         Simulation(args.g, args.v0)
         .add_lattice(width=args.width, height=args.height)
@@ -25,6 +26,9 @@ def run_simulation(args):
     handler = SimulationDataHandler(simulation, fname, buffer_limit=20)
     n_particles = simulation.lattice.n_particles
     order_parameter = torch.zeros(args.n_steps)
+
+    # Open the CSV file for writing
+
 
     for step in tqdm(range(args.n_steps), desc="Simulation Progress"):
         event = simulation.run()
@@ -39,6 +43,9 @@ def run_simulation(args):
         handler.collect_event(event)
         if step % 1000 == 0:
             handler.collect_snapshot()
+        with open(csv_fname, "w") as csv_file:  # New line
+            csv_file.write("dt,energy,order_param\n")  # New line
+            csv_file.write(f"{simulation.delta_t},{simulation.rm.total_energy},{order_parameter[step].item()}\n")  # New line
 
     run.finish()
     handler.close()
