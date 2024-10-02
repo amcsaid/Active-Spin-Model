@@ -1,97 +1,118 @@
-# Particle Lattice Simulation
+# Active Spin Model with Reinforcement Learning Control
 
-## Model Overview
+This repository contains the implementation of an active spin model for interacting self-propelled particles. The project focuses on simulating and studying collective behavior in complex systems, combining concepts from statistical physics and active matter.
 
-The core of this simulation is based on a model where particles move on a two-dimensional lattice with periodic boundary conditions. This model is inspired by the research paper ["Traffic jams, gliders, and bands in the quest for collective motion"](https://arxiv.org/pdf/1302.3797.pdf) by Fernando Peruani, Tobias Klauss, Andreas Deutsch, and Anja Voss-Boehme.
+## Project Structure
 
-Each particle has one of four possible orientations: up, down, left, or right. The orientation of a particle fully determines its moving direction. Particles have two fundamental actions:
-
-1. **Reorientation**: Change their orientation based on the orientations of their nearest neighbors.
-2. **Migration**: Move to an adjacent lattice cell in the direction of their orientation.
-
-The particles' actions are dictated by transition rates (`TR` for reorientation, `TM` for migration). The simulation includes the effect of an external magnetic field that can rotate the particles.
-
-### Control Mechanism in the Lattice Vicsek Model
-
-![Control Mechanism and Tasks in Lattice Vicsek Model](https://github.com/zakaryael/MagneticVicsekLattice/blob/main/control_mechanism_and_tasks.png)
-
-This visual aid showcases the control mechanism introduced in the Lattice Vicsek Model. A simple magnetic field effect is used for 90-degree rotations. The tasks involve directing particles to either move towards or avoid specific target routes.
-
-
-### Citation
-
-For the underlying model and theoretical background, see:
-
-- **Traffic jams, gliders, and bands in the quest for collective motion**  
-  Fernando Peruani, Tobias Klauss, Andreas Deutsch, Anja Voss-Boehme  
-  [ArXiv Paper](https://arxiv.org/pdf/1302.3797.pdf)
-
-
-### Simulation Example
-
-![vicsek with no control](https://github.com/zakaryael/MagneticVicsekLattice/blob/main/example_animation.gif)
-
-
-<figure markdown>
-<figcaption>Lattice Vicsek particles without control on a simple periodic rectangular lattice</figcaption>
-</figure>
-
+```
+.
+├── code_structure.txt
+├── .github
+│   └── workflows
+│       └── python-app.yml
+├── .gitignore
+├── LICENSE
+├── README.md
+├── control_mechanism_and_tasks.png
+├── example_animation.gif
+├── examples
+│   ├── Starter_Notebook.ipynb
+│   ├── basic_simulation.py
+│   ├── experiment.py
+│   ├── g_exp_script.py
+│   ├── list_of_g_script.py
+│   ├── parameters.py
+│   ├── profile_core.py
+│   └── utils.py
+├── lvmc
+│   ├── __init__.py
+│   ├── core
+│   │   ├── __init__.py
+│   │   ├── control_field.py
+│   │   ├── flow.py
+│   │   ├── lattice.py
+│   │   ├── rates.py
+│   │   └── simulation.py
+│   └── data_handling
+│       ├── __init__.py
+│       ├── data_collector.py
+│       └── data_handler.py
+├── requirements.txt
+├── run_sim.sh
+├── setup.py
+└── tests
+    ├── __init__.py
+    ├── test_core
+    │   ├── test_flow.py
+    │   ├── test_lattice.py
+    │   ├── test_magnetic_field.py
+    │   ├── test_rates.py
+    │   └── test_simulation.py
+    └── test_data_handling
+        ├── test_data_collection.py
+        └── test_data_export.py
+```
 
 ## Installation
 
-Clone the repository and navigate into the project directory. 
-Install the required packages using pip:
+1. Clone the repository:
+   ```
+   git clone https://github.com/zakaryael/active-spin-model.git
+   cd active-spin-model
+   ```
 
-```bash
-pip install -r requirements.txt
-```
+2. Create a virtual environment (optional but recommended):
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+   ```
 
-Install the 'particle_lattice' package using pip:
+3. Install the required dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-```bash
-pip install -e .
-```
+4. Install the package in editable mode:
+   ```
+   pip install -e .
+   ```
 
 ## Usage
 
-Example usage scripts are provided in the `examples/` directory.
+### Running a Basic Simulation
 
-Basic usage:
+To run a basic simulation of the active spin model:
 
-tbd
+```python
+from lvmc.core.simulation import Simulation
+from lvmc.core.lattice import Orientation
 
-## Modules
+# Create a simulation
+sim = (Simulation(g=1.5, v0=100, seed=42)
+       .add_lattice(width=32, height=24))
 
-### Core
+# Add particles and build the simulation
+sim.add_particles(density=0.3).build()
 
-- `particle_lattice.py` 
-- `simulation.py`: Handles the main simulation loop
-- `magnetic_field.py`: Manages magnetic field effects on particles
+# Run the simulation for a number of steps
+for _ in range(1000):
+    sim.run()
+```
 
-#### TODO
-- [x] store rates in the simulation class to improve effeciency
+For more detailed examples, refer to the `examples` directory, particularly the `Starter_Notebook.ipynb`.
 
-- [x] add an apply method to the magnetic field class for increased modularity
+## Reinforcement Learning Control
 
+The reinforcement learning control part of this project is implemented in a separate repository. For information on how to use reinforcement learning to control the active spin model, please refer to:
 
-#### TODO
-- [ ] Write IO module
-- [ ] Write visualization module
-  - [ ] Pacman
-- [ ] Dockerize the project
+[https://github.com/zakaryael/Active-Spin-Gym](https://github.com/zakaryael/Active-Spin-Gym)
 
-### Examples
+This separate repository contains the necessary code and instructions for training and using reinforcement learning agents with the active spin model.
 
-- `examples/`: Example usage scripts
+## Contributing
 
-### Tests
+Contributions to this project are welcome!
 
-#### TODO
-- [ ] add unit tests for core modules
-  - [x] unit tests for particle_lattice.py
-  - [ ] unit tests for simulation.py
-  - [ ] unit tests for magnetic_field.py
+## Contact
 
-
-## Future Extensions
-- [ ] Implement different magnetic field effects
+For any questions or concerns, please open an issue in this repository or contact zakarya.el-khiyati@inria.fr
