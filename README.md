@@ -1,4 +1,4 @@
-# Active Spin Model with Reinforcement Learning Control
+# Active Spin Model 
 
 This repository contains the implementation of an active spin model for interacting self-propelled particles. The project focuses on simulating and studying collective behavior in complex systems, combining concepts from statistical physics and active matter.
 
